@@ -401,13 +401,27 @@ def vars_str_rep(vars_dict):
     return str_rep
 
 
-@kb.add("c-n")
-@kb.add("f10")
-def debug_next(event=None):
-    """ """
+def _debug_action(method_name):
+    """Function to reduce code duplication since for the debugger actions next,
+    step, and continue the only difference in the code is which method from the
+    debugger object is called.
+
+    The method name is given as argument and dynamically called.
+    Currently, the only three valid values for `method_name` are: `next_line`,
+    `step`, and `continue_debug`.
+    """
     global current_debug_line
     if current_debugger and (current_debugger.python_module == current_file):
-        current_debug_line = current_debugger.next_line()
+        if hasattr(current_debugger, method_name) and callable(
+            getattr(current_debugger, method_name)
+        ):
+            debugger_method = getattr(current_debugger, method_name)
+        else:
+            # TODO: There should be some error handling here in case a non-existing method name was provided. But will this ever happen?
+            pass
+
+        current_debug_line = debugger_method()
+
         if current_debug_line:
             msg = (
                 f"{vars_str_rep(current_debugger.current_locals)}\n"
@@ -420,48 +434,24 @@ def debug_next(event=None):
             code.buffer.cursor_position = cursor_line
         else:
             tear_down_debugger()
+
+
+@kb.add("c-n")
+@kb.add("f10")
+def debug_next(event=None):
+    _debug_action("next_line")
 
 
 @kb.add("c-i")
 @kb.add("f11")
 def debug_step(event=None):
-    """ """
-    global current_debug_line
-    if current_debugger and (current_debugger.python_module == current_file):
-        current_debug_line = current_debugger.step()
-        if current_debug_line:
-            msg = (
-                f"{vars_str_rep(current_debugger.current_locals)}\n"
-                "-----\n"
-                f"{vars_str_rep(current_debugger.current_globals)}"
-            )
-            feedback(msg)
-
-            cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
-            code.buffer.cursor_position = cursor_line
-        else:
-            tear_down_debugger()
+    _debug_action("step")
 
 
 @kb.add("c-c")
 @kb.add("f12")
 def debug_continue(event=None):
-    """ """
-    global current_debug_line
-    if current_debugger and (current_debugger.python_module == current_file):
-        current_debug_line = current_debugger.continue_debug()
-        if current_debug_line:
-            msg = (
-                f"{vars_str_rep(current_debugger.current_locals)}\n"
-                "-----\n"
-                f"{vars_str_rep(current_debugger.current_globals)}"
-            )
-            feedback(msg)
-
-            cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
-            code.buffer.cursor_position = cursor_line
-        else:
-            tear_down_debugger()
+    _debug_action("continue_debug")
 
 
 @kb.add("c-b")

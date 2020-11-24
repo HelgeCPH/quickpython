@@ -25,13 +25,13 @@ class Debugger:
         self.current_globals = None
 
         self.pdb_command = PDB_COMMAND.format(python_module)
-        # TODO: Change prompt to something more unique, via last arg
         os_str = platform.system()
         if os_str == "Windows":
             raise NotImplmentedError
             # TODO: Implement me
         elif os_str == "Linux" or os_str == "Darwin":
             try:
+                # TODO: Change prompt to something more unique, via last arg?
                 self.pdb = REPLWrapper(self.pdb_command, PDB_PROMPT_STR, None)
             except Exception as e:
                 raise e
