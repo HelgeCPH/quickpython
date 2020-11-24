@@ -15,7 +15,7 @@ import isort
 from prompt_toolkit import Application
 from prompt_toolkit.completion import PathCompleter
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.formatted_text import AnyFormattedText, Template
+from prompt_toolkit.formatted_text import AnyFormattedText, Template, HTML
 from prompt_toolkit.key_binding.key_bindings import KeyBindings
 from prompt_toolkit.layout.containers import (
     AnyContainer,
@@ -37,7 +37,7 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Dialog, MenuContainer, MenuItem, SearchToolbar, TextArea
 from prompt_toolkit.widgets.base import Border, Button, Label
 
-from quickpython import __version__, extensions  # noqa
+from quickpython import __version__, extensions, pdb_wrapper  # noqa
 
 ABOUT_MESSAGE = f"""QuickPython version {__version__}
 
@@ -52,6 +52,9 @@ Made in Seattle.
 kb = KeyBindings()
 eb = KeyBindings()
 current_file: Optional[Path] = None
+current_breakpoints = {}
+current_debug_line = None
+current_debugger = None
 
 default_isort_config = isort.Config(settings_path=os.getcwd())
 if default_isort_config == isort.settings.DEFAULT_CONFIG:
@@ -356,6 +359,153 @@ def run_buffer(event=None):
     asyncio.ensure_future(_run_buffer())
 
 
+def tear_down_debugger():
+    global current_debugger, current_debug_line
+    feedback(f"Stopping debugger...")
+    current_debugger.kill_debugger()
+    current_debugger = None
+    current_debug_line = None
+
+
+@kb.add("c-d")
+@kb.add("f6")
+def toggle_debug(event=None):
+    """ """
+    global current_debugger, current_debug_line
+
+    if current_debugger:
+        # Stop the currently running debugger
+        tear_down_debugger()
+    else:
+        # In case there is no debugger instance, create one with the currently
+        # set breakpoints
+        # TODO: Switch code textarea to be non editable, how to do it?
+        # global code
+        # code.focusable = False
+        bps = current_breakpoints.get(current_file, [])
+        feedback(f"Starting debugger with breakpoints on lines: {bps}")
+        try:
+            current_debugger = pdb_wrapper.Debugger(current_file, bps)
+            current_debugger.update_locals()
+            current_debugger.update_globals()
+        except Exception as e:
+            feedback(f"Debugger cannot start due to error in program!")
+
+
+def vars_str_rep(vars_dict):
+    str_rep = ""
+    for k, v in vars_dict.items():
+        # TODO: Add some slicing on v to make it shorter...
+        # But which values precisely?
+        str_rep += f"{k}: {v}\n"
+    return str_rep
+
+
+@kb.add("c-n")
+@kb.add("f10")
+def debug_next(event=None):
+    """ """
+    global current_debug_line
+    if current_debugger and (current_debugger.python_module == current_file):
+        current_debug_line = current_debugger.next_line()
+        if current_debug_line:
+            msg = (
+                f"{vars_str_rep(current_debugger.current_locals)}\n"
+                "-----\n"
+                f"{vars_str_rep(current_debugger.current_globals)}"
+            )
+            feedback(msg)
+
+            cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
+            code.buffer.cursor_position = cursor_line
+        else:
+            tear_down_debugger()
+
+
+@kb.add("c-i")
+@kb.add("f11")
+def debug_step(event=None):
+    """ """
+    global current_debug_line
+    if current_debugger and (current_debugger.python_module == current_file):
+        current_debug_line = current_debugger.step()
+        if current_debug_line:
+            msg = (
+                f"{vars_str_rep(current_debugger.current_locals)}\n"
+                "-----\n"
+                f"{vars_str_rep(current_debugger.current_globals)}"
+            )
+            feedback(msg)
+
+            cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
+            code.buffer.cursor_position = cursor_line
+        else:
+            tear_down_debugger()
+
+
+@kb.add("c-c")
+@kb.add("f12")
+def debug_continue(event=None):
+    """ """
+    global current_debug_line
+    if current_debugger and (current_debugger.python_module == current_file):
+        current_debug_line = current_debugger.continue_debug()
+        if current_debug_line:
+            msg = (
+                f"{vars_str_rep(current_debugger.current_locals)}\n"
+                "-----\n"
+                f"{vars_str_rep(current_debugger.current_globals)}"
+            )
+            feedback(msg)
+
+            cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
+            code.buffer.cursor_position = cursor_line
+        else:
+            tear_down_debugger()
+
+
+@kb.add("c-b")
+def toggle_breakpoint(event=None):
+    """ """
+    index = code.buffer.cursor_position
+    line_idx, _ = code.buffer.document.translate_index_to_position(index)
+
+    # In case of an empty line find the next non-empty line and set the
+    # breakpoint there
+    # Breakpoints can still be in comments, that will be checked later when
+    # interacting with the debugger
+    if not code.buffer.document.current_line.strip():
+        next_word_pos = code.buffer.document.find_next_word_beginning()
+        next_line_idx, _ = code.buffer.document.translate_index_to_position(index + next_word_pos)
+        line_idx = next_line_idx
+
+    lineno = line_idx + 1
+    if lineno in current_breakpoints.get(current_file, []):
+        current_breakpoints[current_file].remove(lineno)
+    else:
+        current_breakpoints.setdefault(current_file, [])
+        current_breakpoints[current_file].append(lineno)
+
+    if current_debugger and (current_debugger.python_module == current_file):
+        current_debugger
+
+
+@kb.add("c-k")
+@kb.add("f4")
+def check(event=None):
+    import ast
+    import traceback
+
+    try:
+        ast.parse(app.current_buffer.text, filename=current_file.name)
+    except SyntaxError as e:
+        oi = "".join(traceback.format_exception(None, e, None))
+
+        feedback(str(oi))
+    else:
+        feedback("The program seems to be syntactically correct.")
+
+
 def debug():
     asyncio.ensure_future(_run_buffer(debug=True))
 
@@ -398,6 +548,22 @@ def insert_time_and_date():
     code.buffer.insert_text(datetime.now().isoformat())
 
 
+def get_line_prefix(line_idx, wrap_count):
+    lineno = line_idx + 1
+    # Wrap count should be always 0 since wrapping is disabled
+    if wrap_count == 0:
+        is_breakpoint_line = lineno in current_breakpoints.get(current_file, [])
+        is_debug_line = current_debug_line and (lineno == current_debug_line)
+        if is_breakpoint_line and is_debug_line:
+            return HTML('<style fg="orange">ᐉ</style>')
+        if is_breakpoint_line:
+            return HTML('<style fg="red">●</style>')
+        elif is_debug_line:
+            return HTML('<style fg="orange">ᐅ</style>')
+        else:
+            return HTML(" ")
+
+
 search_toolbar = SearchToolbar()
 code = TextArea(
     scrollbar=True,
@@ -405,6 +571,7 @@ code = TextArea(
     focus_on_click=True,
     line_numbers=True,
     search_field=search_toolbar,
+    get_line_prefix=get_line_prefix,
 )
 code.window.right_margins[0].up_arrow_symbol = "↑"  # type: ignore
 code.window.right_margins[0].down_arrow_symbol = "↓"  # type: ignore
@@ -864,6 +1031,7 @@ root_container = MenuContainer(
             children=[
                 MenuItem("Start (F5)", handler=run_buffer),
                 MenuItem("Debug", handler=debug),
+                MenuItem("Check (F4)", handler=check),
             ],
         ),
         MenuItem(
