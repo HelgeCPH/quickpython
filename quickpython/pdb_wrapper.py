@@ -8,8 +8,7 @@ from pexpect.popen_spawn import PopenSpawn
 
 
 # For Windows, see https://github.com/raczben/wexpect
-PDB_COMMAND = "python -m pdb {}"
-PDB_COMMAND_WIN = f"{sys.executable} -m pdb {python_module}"
+PDB_COMMAND = "{} -m pdb {}"
 PDB_PROMPT_STR = "(Pdb) "
 PDB_PROMPT_STR_WIN = "\(Pdb\) "
 GET_LOCALS_CMD = "{k: str(v) for k, v in locals().items() if k != '__builtins__'}"
@@ -40,8 +39,8 @@ class Debugger:
         self.current_line = None
         self.current_locals = None
         self.current_globals = None
+        self.pdb_command = PDB_COMMAND.format(sys.executable, python_module)
 
-        self.pdb_command = PDB_COMMAND.format(python_module)
         os_str = platform.system()
         if os_str == "Windows":
             try:

@@ -253,6 +253,10 @@ def feedback(text):
     immediate.buffer.text = text
 
 
+def debug_feedback(text):
+    debug.buffer.text = text
+
+
 def black_format_code(contents: str) -> str:
     """Formats the given import section using black."""
     try:
@@ -423,12 +427,15 @@ def _debug_action(method_name):
         current_debug_line = debugger_method()
 
         if current_debug_line:
-            msg = (
-                f"{vars_str_rep(current_debugger.current_locals)}\n"
-                "-----\n"
-                f"{vars_str_rep(current_debugger.current_globals)}"
-            )
-            feedback(msg)
+            locals_str = vars_str_rep(current_debugger.current_locals)
+            globals_str = vars_str_rep(current_debugger.current_globals)
+            if locals_str == globals_str:
+                # If there is only global scope do not print duplicate
+                # information
+                msg = f"\n-----\n{globals_str}"
+            else:
+                msg = f"{locals_str}\n-----\n{globals_str}"
+            debug_feedback(msg)
 
             cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
             code.buffer.cursor_position = cursor_line
@@ -489,9 +496,8 @@ def check(event=None):
     try:
         ast.parse(app.current_buffer.text, filename=current_file.name)
     except SyntaxError as e:
-        oi = "".join(traceback.format_exception(None, e, None))
-
-        feedback(str(oi))
+        error_str = "".join(traceback.format_exception(None, e, None))
+        feedback(str(error_str))
     else:
         feedback("The program seems to be syntactically correct.")
 
@@ -947,11 +953,28 @@ QLabel = partial(Label, dont_extend_width=True)
 SPACE = QLabel(" ")
 
 immediate = TextArea()
+debug = TextArea(
+    wrap_lines=False,
+)
 root_container = MenuContainer(
     body=HSplit(
         [
-            open_file_frame,
-            search_toolbar,
+            VSplit(
+                [
+                    HSplit(
+                        [
+                            open_file_frame,
+                            search_toolbar,
+                        ]
+                    ),
+                    ImmediateFrame(
+                        debug,
+                        title="Debug",
+                        width=40,
+                        style="fg:#AAAAAA bold",
+                    ),
+                ],
+            ),
             ImmediateFrame(
                 immediate,
                 title="Immediate",
