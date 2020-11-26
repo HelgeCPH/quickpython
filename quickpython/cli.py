@@ -484,7 +484,7 @@ def toggle_breakpoint(event=None):
         current_breakpoints[current_file].append(lineno)
 
     if current_debugger and (current_debugger.python_module == current_file):
-        current_debugger
+        current_debugger.set_breakpoint(current_file, lineno)
 
 
 @kb.add("c-k")
