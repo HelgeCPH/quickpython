@@ -1,18 +1,35 @@
 import re
 import ast
+import sys
+import signal
 import platform
 from pexpect.replwrap import REPLWrapper
+from pexpect.popen_spawn import PopenSpawn
 
 
 # For Windows, see https://github.com/raczben/wexpect
 PDB_COMMAND = "python -m pdb {}"
+PDB_COMMAND_WIN = f"{sys.executable} -m pdb {python_module}"
 PDB_PROMPT_STR = "(Pdb) "
+PDB_PROMPT_STR_WIN = "\(Pdb\) "
 GET_LOCALS_CMD = "{k: str(v) for k, v in locals().items() if k != '__builtins__'}"
 GET_GLOBALS_CMD = "{k: str(v) for k, v in globals().items() if k != '__builtins__'}"
 NEXT_CMD = "n"
 STEP_CMD = "s"
 CONTINUE_CMD = "c"
 SET_BREAKPOINT_CMD = "b {}:{}"  # First is filename, second is line number
+
+
+class WinPDBWrapper:
+    def __init__(self, pdb_command, PDB_PROMPT_STR):
+        self.child = PopenSpawn(pdb_command)
+        self.prompt = PDB_PROMPT_STR
+
+    def run_command(self, cmd: str):
+        self.pdb.sendline(cmd)
+        self.pdb.expect("\(Pdb\) ")
+        response = self.pdb.before.decode("utf-8")
+        return response
 
 
 class Debugger:
@@ -27,8 +44,10 @@ class Debugger:
         self.pdb_command = PDB_COMMAND.format(python_module)
         os_str = platform.system()
         if os_str == "Windows":
-            raise NotImplmentedError
-            # TODO: Implement me
+            try:
+                self.pdb = WinPDBWrapper(self.pdb_command, PDB_PROMPT_STR)
+            except Exception as e:
+                raise e
         elif os_str == "Linux" or os_str == "Darwin":
             try:
                 # TODO: Change prompt to something more unique, via last arg?
@@ -93,7 +112,7 @@ class Debugger:
         bp_cmd = SET_BREAKPOINT_CMD.format(fname, lineno)
         self.pdb.run_command(bp_cmd)
         # I do not think I need to parse responses since they could look like:
-        # 'Breakpoint 1 at /Users/ropf/Documents/workspace/Python/qpython/quickpython/examples/fibonacci.py:10\r\n'
+        # 'Breakpoint 1 at /path/to/python/module.py:10\r\n'
         # or like:
         # '*** Blank or comment\r\n'
 
@@ -102,4 +121,7 @@ class Debugger:
             self.set_breakpoint(self.python_module, brkpoint)
 
     def kill_debugger(self):
-        self.pdb.child.terminate(force=True)
+        if isinstance(self.pdb, WinPDBWrapper):
+            self.pdb.child.kill(signal.SIGTERM)
+        else:
+            self.pdb.child.terminate(force=True)
