@@ -71,11 +71,23 @@ class Debugger:
         self.current_globals = globals_dict
 
     def _parse_lineno(self, response):
-        if response.startswith("The program finished and will be restarted"):
+        restart_msg = "The program finished and will be restarted"
+        if response.startswith(restart_msg):
             # The debugger would otherwise continue forever.
-            return None
-
+            return None, None
         try:
+            # The last three lines are the module name, the current line, and a
+            # blank line
+            output_lines = [l.rstrip() for l in response.split("\n")[:-3]]
+            output_lines = "\n".join(output_lines) + "\n"
+            if len(output_lines) >= 2 and output_lines[-2].startswith(restart_msg):
+                # The debugger would otherwise continue forever.
+                # TODO: add last output
+                return None, None
+
+            # with open("/tmp/output.txt", "a") as fp:
+            #     fp.write(str(output_lines.split("\n")) + "\n")
+
             # Parse the currently active line out of the pdb output
             # '> /path/to/python/module.py(3)<module>()\r\n-> b = 1.2\r\n'
             reg_exp = f"{self.python_module}\((?P<lineno>\d+)\)"
@@ -92,8 +104,8 @@ class Debugger:
             # --Return--\r\n> <string>(1)<module>()->None\r\n
             # Likely this case is also good for all other potential parsing
             # issues?
-            return None
-        return active_line
+            return None, None
+        return active_line, output_lines
 
     def next_line(self):
         response = self.pdb.run_command(NEXT_CMD)

@@ -253,8 +253,16 @@ def feedback(text):
     immediate.buffer.text = text
 
 
-def debug_feedback(text):
-    debug.buffer.text = text
+def debug_feedback(global_vars, local_vars, output_str):
+
+    globals_str = vars_str_rep(global_vars)
+    locals_str = vars_str_rep(local_vars)
+    if locals_str != globals_str:
+        # If there is only global scope do not print duplicate
+        # information
+        debug_locals.buffer.text = text
+    debug_globals.buffer.text = globals_str
+    debug_output.buffer.text = output_str
 
 
 def black_format_code(contents: str) -> str:
@@ -424,18 +432,12 @@ def _debug_action(method_name):
             # TODO: There should be some error handling here in case a non-existing method name was provided. But will this ever happen?
             pass
 
-        current_debug_line = debugger_method()
+        current_debug_line, output_lines = debugger_method()
 
         if current_debug_line:
-            locals_str = vars_str_rep(current_debugger.current_locals)
-            globals_str = vars_str_rep(current_debugger.current_globals)
-            if locals_str == globals_str:
-                # If there is only global scope do not print duplicate
-                # information
-                msg = f"\n-----\n{globals_str}"
-            else:
-                msg = f"{locals_str}\n-----\n{globals_str}"
-            debug_feedback(msg)
+            debug_feedback(
+                current_debugger.current_globals, current_debugger.current_locals, output_lines
+            )
 
             cursor_line = code.buffer.document.translate_row_col_to_index(current_debug_line - 1, 0)
             code.buffer.cursor_position = cursor_line
@@ -949,13 +951,38 @@ def built_in_functions():
     new("\n".join(docs))
 
 
+debug_globals = TextArea(wrap_lines=False)
+debug_locals = TextArea(wrap_lines=False)
+debug_output = TextArea(wrap_lines=False)
+
+debug_frame = HSplit(
+    [
+        ImmediateFrame(debug_globals, title="Globals", width=40, style="fg:#AAAAAA bold"),
+        ImmediateFrame(debug_locals, title="Locals", width=40, style="fg:#AAAAAA bold"),
+        ImmediateFrame(debug_output, title="Output", width=40, style="fg:#AAAAAA bold"),
+    ],
+)
+
+
 QLabel = partial(Label, dont_extend_width=True)
 SPACE = QLabel(" ")
 
 immediate = TextArea()
-debug = TextArea(
-    wrap_lines=False,
+immediate = TextArea()
+immediate_frame = ImmediateFrame(immediate, title="Immediate", height=5, style="fg:#AAAAAA bold")
+bottom_line = VSplit(
+    [
+        QLabel("<F1=Help>"),
+        SPACE,
+        QLabel("<F5=Run>"),
+        SPACE,
+        QLabel("<CTRL+R=Run>"),
+    ],
+    style="bg:#00AAAA fg:white bold",
+    height=1,
 )
+
+
 root_container = MenuContainer(
     body=HSplit(
         [
@@ -965,33 +992,13 @@ root_container = MenuContainer(
                         [
                             open_file_frame,
                             search_toolbar,
+                            immediate_frame,
                         ]
                     ),
-                    ImmediateFrame(
-                        debug,
-                        title="Debug",
-                        width=40,
-                        style="fg:#AAAAAA bold",
-                    ),
+                    debug_frame,
                 ],
             ),
-            ImmediateFrame(
-                immediate,
-                title="Immediate",
-                height=5,
-                style="fg:#AAAAAA bold",
-            ),
-            VSplit(
-                [
-                    QLabel("<F1=Help>"),
-                    SPACE,
-                    QLabel("<F5=Run>"),
-                    SPACE,
-                    QLabel("<CTRL+R=Run>"),
-                ],
-                style="bg:#00AAAA fg:white bold",
-                height=1,
-            ),
+            bottom_line,
         ]
     ),
     menu_items=[
@@ -1044,7 +1051,6 @@ root_container = MenuContainer(
             children=[
                 MenuItem("Start (F5)", handler=run_buffer),
                 MenuItem("Debug", handler=debug),
-                MenuItem("Check (F4)", handler=check),
             ],
         ),
         MenuItem(
