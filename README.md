@@ -63,6 +63,8 @@ Technically, this visual debugger is done by wrapping `pdb` via `pexpect`.
 Things that I think should be there but are not implemented yet:
 
   * The frames to the right `Locals`, `Globals`, `Output` should be of fixed height, scrollable in both directions, and they should only appear when the debugger is active.
+  * Code should not be editable while the debugger is running.
+  * Proper testing on Windows, I could not test it there yet.
   * Some of the output from PDB has to be removed from the displayed output, e.g., `--Return--`
 
 
